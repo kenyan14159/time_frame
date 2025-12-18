@@ -54,7 +54,7 @@ export function useCanvasGenerator({
     ]);
     const numberWeights = new Set<number>([template.fonts.record.weight]);
 
-    const loaders: Array<Promise<FontFace[]>> = [];
+    const loaders: Promise<FontFace[]>[] = [];
     for (const w of japaneseWeights) {
       loaders.push(document.fonts.load(`${w} 32px ${japaneseFontFamily}`));
     }
@@ -62,7 +62,7 @@ export function useCanvasGenerator({
       loaders.push(document.fonts.load(`${w} 32px ${numberFontFamily}`));
     }
 
-    await Promise.allSettled(loaders);
+    await Promise.all(loaders.map(p => p.catch(() => [])));
     await document.fonts.ready;
   }, [japaneseFontFamily, numberFontFamily, template]);
 

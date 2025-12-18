@@ -40,14 +40,24 @@ self.addEventListener('activate', (event) => {
 
 // フェッチ時の処理（ネットワーク優先、フォールバックでキャッシュ）
 self.addEventListener('fetch', (event) => {
+  // http/https以外のスキーム（chrome-extension://など）は無視
+  const url = new URL(event.request.url);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // レスポンスをクローンしてキャッシュに保存
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
+        // 成功したレスポンスのみキャッシュ
+        if (response && response.status === 200 && response.type === 'basic') {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache).catch(() => {
+              // キャッシュ失敗は無視
+            });
+          });
+        }
         return response;
       })
       .catch(() => {

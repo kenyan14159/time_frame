@@ -17,7 +17,7 @@ import { CustomizeSettingsPanel } from './components/CustomizeSettings';
 import { HistoryPanel } from './components/HistoryPanel';
 import { StickerPicker } from './components/StickerPicker';
 import { SplitTimeInput, type SplitTime } from './components/SplitTimeInput';
-import { Onboarding } from './components/Onboarding';
+import { formatSplitsToText } from './utils/splitTime';
 import { LoadingOverlay } from './components/Skeleton';
 
 // 初期フォームデータ
@@ -101,6 +101,16 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [formData, customizeSettings, selectedTemplate.id, storage.isLoaded]);
+
+  // スプリットタイムから記録欄への自動反映
+  useEffect(() => {
+    if (splits.length === 0) return;
+    
+    const splitsText = formatSplitsToText(splits);
+    if (splitsText && splitsText !== formData.record) {
+      setFormData(prev => ({ ...prev, record: splitsText }));
+    }
+  }, [splits]);
 
   // アンドゥ用の状態保存
   const saveStateForUndo = useCallback(() => {
@@ -274,18 +284,29 @@ function App() {
     }
     
     setIsLoading(true);
+    let success = false;
+    
     try {
       await downloadImage();
-      // 履歴に追加
-      const thumbnail = await generateImage();
-      storage.addToHistory(formData, customizeSettings, selectedTemplate.id, thumbnail || undefined);
-      toast.success('画像をダウンロードしました');
+      success = true;
     } catch (error) {
       toast.error('画像のダウンロードに失敗しました');
       console.error(error);
-    } finally {
-      setIsLoading(false);
     }
+    
+    // 成功した場合のみ履歴追加とメッセージ表示
+    if (success) {
+      try {
+        const thumbnail = await generateImage();
+        storage.addToHistory(formData, customizeSettings, selectedTemplate.id, thumbnail || undefined);
+      } catch {
+        // 履歴追加の失敗は無視
+      }
+      toast.success('画像をダウンロードしました');
+    }
+    
+    // 必ずローディング解除
+    setIsLoading(false);
   }, [formData, validation, downloadImage, toast, generateImage, storage, customizeSettings, selectedTemplate.id]);
 
   // シェア処理（バリデーション付き）
@@ -296,18 +317,36 @@ function App() {
     }
     
     setIsLoading(true);
+    let success = false;
+    let cancelled = false;
+    
     try {
-      await shareImage();
-      // 履歴に追加
-      const thumbnail = await generateImage();
-      storage.addToHistory(formData, customizeSettings, selectedTemplate.id, thumbnail || undefined);
-      toast.success('画像をシェアしました');
+      const result = await shareImage();
+      cancelled = result === false;
+      success = result === true;
     } catch (error) {
-      toast.error('画像のシェアに失敗しました');
-      console.error(error);
-    } finally {
-      setIsLoading(false);
+      // ユーザーがシェアをキャンセルした場合
+      if (error instanceof Error && error.name === 'AbortError') {
+        cancelled = true;
+      } else {
+        toast.error('画像のシェアに失敗しました');
+        console.error(error);
+      }
     }
+    
+    // キャンセルでなく成功した場合のみ履歴追加とメッセージ表示
+    if (success && !cancelled) {
+      try {
+        const thumbnail = await generateImage();
+        storage.addToHistory(formData, customizeSettings, selectedTemplate.id, thumbnail || undefined);
+      } catch {
+        // 履歴追加の失敗は無視
+      }
+      toast.success('画像をシェアしました');
+    }
+    
+    // 必ずローディング解除
+    setIsLoading(false);
   }, [formData, validation, shareImage, toast, generateImage, storage, customizeSettings, selectedTemplate.id]);
 
   // 履歴から読み込み
@@ -368,9 +407,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* オンボーディング */}
-      <Onboarding />
-
       {/* トースト通知 */}
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
 
@@ -560,6 +596,10 @@ function App() {
                 formData={formData}
                 textLayout={customizeSettings.textLayout}
                 onLayoutChange={(layout) => setCustomizeSettings(prev => ({ ...prev, textLayout: layout }))}
+                stickers={stickers}
+                onStickersChange={setStickers}
+                imagePosition={imagePosition}
+                onImagePositionChange={setImagePosition}
               />
 
               {/* ダウンロードボタン */}
@@ -571,19 +611,6 @@ function App() {
                   isGenerating={isGenerating || isLoading}
                 />
               </div>
-
-              {/* 使い方ヒント */}
-              {!isReady && (
-                <div className="text-center text-sm text-text-muted bg-surface/30 rounded-lg p-4">
-                  <p className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    必須項目：記録・背景画像（リザルト・練習どちらでも可）
-                  </p>
-                </div>
-              )}
 
               {/* キーボードショートカット */}
               <div className="text-xs text-text-muted/60 space-y-1 bg-surface/30 rounded-lg p-3">

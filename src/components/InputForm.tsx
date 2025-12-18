@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useRef, useState, useCallback, type ChangeEvent, type DragEvent } from 'react';
 import type { FormData } from '../types';
 
 interface InputFormProps {
@@ -19,6 +19,7 @@ interface InputFormProps {
 export function InputForm({ formData, onFormChange, backgroundPreview, errors, onErrorClear, onError }: InputFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -74,28 +75,49 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
     }
   };
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+  // ドラッグエンター（カウンターで子要素の出入りを管理）
+  const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleImageFile(file, onError);
+    dragCounter.current++;
+    
+    // ファイルを含むドラッグのみ反応
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
     }
-  };
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // ドロップを許可するために必要
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    
+    // カウンターが0になったら完全に領域外
+    if (dragCounter.current === 0) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // カウンターをリセット
+    dragCounter.current = 0;
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleImageFile(files[0], onError);
+    }
+  }, [onError]);
 
   const handleImageClick = () => {
     fileInputRef.current?.click();
@@ -246,6 +268,7 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
           <div className="relative">
             <div 
               onClick={handleImageClick}
+              onDragEnter={handleDragEnter}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -269,7 +292,7 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
               <img 
                 src={backgroundPreview} 
                 alt="背景プレビュー" 
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover pointer-events-none"
               />
             </div>
             <button
@@ -288,6 +311,7 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
         ) : (
           <div
             onClick={handleImageClick}
+            onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}

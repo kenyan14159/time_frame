@@ -19,7 +19,7 @@ interface UseCanvasGeneratorReturn {
   hasBackgroundImage: boolean;
   generateImage: () => Promise<string | null>;
   downloadImage: () => Promise<void>;
-  shareImage: () => Promise<void>;
+  shareImage: () => Promise<boolean>;
 }
 
 export function useCanvasGenerator({
@@ -538,55 +538,83 @@ export function useCanvasGenerator({
     }
   }, [generateImage, formData.eventName]);
 
-  // 画像をシェア
-  const shareImage = useCallback(async (): Promise<void> => {
+  // 画像をシェア（キャンセル時はfalseを返す）
+  const shareImage = useCallback(async (): Promise<boolean> => {
     const canvas = canvasRef.current;
     if (!canvas) {
       throw new Error('Canvas element not found');
     }
     
+    // Web Share APIが利用不可の場合はダウンロードにフォールバック
     if (!navigator.share) {
-      // フォールバック: ダウンロード
       await downloadImage();
-      return;
+      return true;
     }
 
     setIsGenerating(true);
+    
     try {
       await ensureFontsReady();
       drawCanvas();
       
-      const blob = await new Promise<Blob | null>((resolve, reject) => {
+      const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Failed to convert canvas to blob'));
-          }
+          resolve(blob);
         }, 'image/png');
       });
       
       if (!blob) {
-        throw new Error('Failed to create blob from canvas');
+        setIsGenerating(false);
+        // Blobの生成に失敗した場合はダウンロードにフォールバック
+        await downloadImage();
+        return true;
       }
 
       const file = new File([blob], 'result.png', { type: 'image/png' });
       
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'TIME FRAME',
-          text: `${formData.eventName} - ${formData.eventType}: ${formData.record}`,
-        });
+      // ファイルシェアがサポートされているか確認
+      const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+      
+      if (canShareFiles) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'TIME FRAME',
+            text: `${formData.eventName} - ${formData.eventType}: ${formData.record}`,
+          });
+          setIsGenerating(false);
+          return true;
+        } catch (shareError) {
+          setIsGenerating(false);
+          // ユーザーがシェアをキャンセルした場合
+          if (shareError instanceof Error && shareError.name === 'AbortError') {
+            return false;
+          }
+          // その他のエラーはダウンロードにフォールバック
+          console.warn('Share failed, falling back to download:', shareError);
+          await downloadImage();
+          return true;
+        }
       } else {
-        // フォールバック: ダウンロード
+        setIsGenerating(false);
+        // ファイルシェア非対応の場合はダウンロードにフォールバック
         await downloadImage();
+        return true;
       }
     } catch (error) {
-      console.error('Failed to share image:', error);
-      throw error;
-    } finally {
       setIsGenerating(false);
+      // AbortErrorの場合はキャンセル扱い
+      if (error instanceof Error && error.name === 'AbortError') {
+        return false;
+      }
+      console.error('Failed to share image:', error);
+      // エラー時もダウンロードにフォールバック
+      try {
+        await downloadImage();
+        return true;
+      } catch {
+        throw error;
+      }
     }
   }, [drawCanvas, formData, downloadImage, ensureFontsReady]);
 

@@ -302,7 +302,7 @@ function App() {
       } catch {
         // 履歴追加の失敗は無視
       }
-      toast.success('画像をダウンロードしました');
+      toast.success('いい走りでした。#timeframe をつけてシェアしよう');
     }
     
     // 必ずローディング解除
@@ -342,7 +342,7 @@ function App() {
       } catch {
         // 履歴追加の失敗は無視
       }
-      toast.success('画像をシェアしました');
+      toast.success('いい走りでした。#timeframe をつけてシェアしよう');
     }
     
     // 必ずローディング解除
@@ -629,6 +629,14 @@ function App() {
 
       {/* フッター */}
       <footer className="py-8 text-center border-t border-border">
+        <div className="space-y-2 mb-4">
+          <p className="text-text-muted/50 text-[10px]">
+            ※ 本サービスは非公式ツールです
+          </p>
+          <p className="text-text-muted/50 text-[10px]">
+            ※ アップロードした画像は保存されません
+          </p>
+        </div>
         <p className="text-text-muted/60 text-xs">
           © 2025 TIME FRAME
         </p>

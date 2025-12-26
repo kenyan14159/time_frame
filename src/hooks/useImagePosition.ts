@@ -126,3 +126,4 @@ export function useImagePosition({ onPositionChange }: UseImagePositionProps = {
     handleTouchEnd,
   };
 }
+

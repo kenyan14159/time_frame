@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { useConfirm } from '../hooks/useConfirm';
+import { ConfirmDialog } from './ConfirmDialog';
 
 // ステッカーの型
 export interface Sticker {
@@ -31,6 +33,7 @@ interface StickerPickerProps {
 export function StickerPicker({ stickers, onStickersChange }: StickerPickerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'emoji' | 'logo'>('emoji');
+  const confirmDialog = useConfirm();
 
   // ステッカーを追加
   const addSticker = useCallback((type: Sticker['type'], content: string) => {
@@ -76,11 +79,20 @@ export function StickerPicker({ stickers, onStickersChange }: StickerPickerProps
   }, [addSticker]);
 
   // 全てクリア
-  const clearAll = useCallback(() => {
-    if (window.confirm('全てのステッカーを削除しますか？')) {
+  const clearAll = useCallback(async () => {
+    const confirmed = await confirmDialog.confirm(
+      '全てのステッカーを削除しますか？',
+      '追加したステッカーがすべて削除されます。この操作は元に戻せません。',
+      {
+        confirmLabel: '削除',
+        cancelLabel: 'キャンセル',
+        confirmVariant: 'danger',
+      }
+    );
+    if (confirmed) {
       onStickersChange([]);
     }
-  }, [onStickersChange]);
+  }, [onStickersChange, confirmDialog]);
 
   return (
     <div className="space-y-3">
@@ -228,6 +240,19 @@ export function StickerPicker({ stickers, onStickersChange }: StickerPickerProps
           </p>
         </div>
       )}
+
+      {/* カスタムダイアログ */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        cancelLabel={confirmDialog.cancelLabel}
+        confirmVariant={confirmDialog.confirmVariant}
+        onConfirm={confirmDialog.handleConfirm}
+        onCancel={confirmDialog.cancel}
+      />
     </div>
   );
 }
+

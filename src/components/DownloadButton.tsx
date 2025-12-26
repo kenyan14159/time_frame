@@ -16,11 +16,12 @@ export function DownloadButton({ onDownload, onShare, isReady, isGenerating }: D
         aria-label={isReady ? '画像をダウンロード' : '必須項目を入力してください'}
         aria-disabled={!isReady || isGenerating}
         className={`
-          w-full py-4 px-6 rounded-xl font-bold text-lg
+          w-full py-4 sm:py-4 px-6 rounded-xl font-bold text-base sm:text-lg
           transition-all duration-200 transform
           focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background
+          touch-manipulation
           ${isReady && !isGenerating
-            ? 'bg-accent hover:bg-accent-hover text-white shadow-lg shadow-accent/25 hover:shadow-accent/40 hover:scale-[1.02] active:scale-[0.98]'
+            ? 'bg-accent hover:bg-accent-hover active:bg-accent-hover text-white shadow-lg shadow-accent/25 hover:shadow-accent/40 hover:scale-[1.02] active:scale-[0.98]'
             : 'bg-surface text-text-muted cursor-not-allowed border border-border'
           }
         `}
@@ -58,7 +59,7 @@ export function DownloadButton({ onDownload, onShare, isReady, isGenerating }: D
           disabled={isGenerating}
           aria-label="SNSでシェアする"
           aria-disabled={isGenerating}
-          className="w-full py-3 px-6 rounded-xl font-semibold text-text-primary bg-surface border border-border hover:bg-surface-hover transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background"
+          className="w-full py-3 px-6 rounded-xl font-semibold text-text-primary bg-surface border border-border hover:bg-surface-hover active:bg-surface-hover transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background touch-manipulation"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 

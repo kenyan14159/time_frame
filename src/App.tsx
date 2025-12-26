@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { FormData, Template, CustomizeSettings, Sticker, ImagePosition } from './types';
 import { defaultTemplate, getTemplateById } from './templates';
 import { DEFAULT_CUSTOMIZE_SETTINGS, DEFAULT_IMAGE_POSITION } from './types';
@@ -7,7 +7,11 @@ import { useValidation } from './hooks/useValidation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useLocalStorage, type HistoryItem, type CustomTemplate } from './hooks/useLocalStorage';
 import { useToast } from './hooks/useToast';
+import { useConfirm } from './hooks/useConfirm';
+import { usePrompt } from './hooks/usePrompt';
 import { ToastContainer } from './components/Toast';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { PromptDialog } from './components/PromptDialog';
 import { Header } from './components/Header';
 import { InputForm } from './components/InputForm';
 import { TemplateSelector } from './components/TemplateSelector';
@@ -19,6 +23,7 @@ import { StickerPicker } from './components/StickerPicker';
 import { SplitTimeInput, type SplitTime } from './components/SplitTimeInput';
 import { formatSplitsToText } from './utils/splitTime';
 import { LoadingOverlay } from './components/Skeleton';
+import { logger } from './utils/logger';
 
 // 初期フォームデータ
 const initialFormData: FormData = {
@@ -38,6 +43,10 @@ function App() {
 
   // LocalStorage
   const storage = useLocalStorage();
+
+  // カスタムダイアログ
+  const confirmDialog = useConfirm();
+  const promptDialog = usePrompt();
 
   // フォームデータの状態
   const [formData, setFormData] = useState<FormData>(initialFormData);
@@ -184,19 +193,31 @@ function App() {
   // 設定パネルの開閉状態
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
 
-  // 背景画像のプレビューURL
+  // 背景画像のプレビューURL（メモリリーク防止）
   const [backgroundPreview, setBackgroundPreview] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  
   useEffect(() => {
+    // 古いObjectURLを確実に解放
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
     if (!formData.backgroundImage) {
       setBackgroundPreview(null);
       return;
     }
 
     const objectUrl = URL.createObjectURL(formData.backgroundImage);
+    objectUrlRef.current = objectUrl;
     setBackgroundPreview(objectUrl);
 
     return () => {
-      URL.revokeObjectURL(objectUrl);
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
     };
   }, [formData.backgroundImage]);
 
@@ -211,8 +232,17 @@ function App() {
   }, []);
 
   // データの全リセット
-  const handleReset = useCallback(() => {
-    if (window.confirm('入力をすべてクリアしますか？')) {
+  const handleReset = useCallback(async () => {
+    const confirmed = await confirmDialog.confirm(
+      '入力をすべてクリアしますか？',
+      '入力した内容と設定がすべて削除されます。この操作は元に戻せません。',
+      {
+        confirmLabel: 'クリア',
+        cancelLabel: 'キャンセル',
+        confirmVariant: 'danger',
+      }
+    );
+    if (confirmed) {
       saveStateForUndo();
       setFormData(initialFormData);
       setCustomizeSettings(DEFAULT_CUSTOMIZE_SETTINGS);
@@ -224,7 +254,7 @@ function App() {
       storage.clearDraft();
       toast.success('入力をクリアしました');
     }
-  }, [validation, toast, saveStateForUndo, storage]);
+  }, [validation, toast, saveStateForUndo, storage, confirmDialog]);
 
   // アンドゥ
   const handleUndo = useCallback(() => {
@@ -291,7 +321,7 @@ function App() {
       success = true;
     } catch (error) {
       toast.error('画像のダウンロードに失敗しました');
-      console.error(error);
+      logger.error('Failed to download image', error);
     }
     
     // 成功した場合のみ履歴追加とメッセージ表示
@@ -330,7 +360,7 @@ function App() {
         cancelled = true;
       } else {
         toast.error('画像のシェアに失敗しました');
-        console.error(error);
+        logger.error('Failed to share image', error);
       }
     }
     
@@ -366,8 +396,17 @@ function App() {
   }, [saveStateForUndo, toast]);
 
   // カスタムテンプレートを保存
-  const handleSaveCustomTemplate = useCallback(() => {
-    const name = window.prompt('設定の名前を入力してください', `カスタム ${new Date().toLocaleDateString('ja-JP')}`);
+  const handleSaveCustomTemplate = useCallback(async () => {
+    const name = await promptDialog.prompt(
+      '設定の名前を入力してください',
+      'この設定に名前を付けて保存できます。',
+      {
+        defaultValue: `カスタム ${new Date().toLocaleDateString('ja-JP')}`,
+        placeholder: '設定名を入力',
+        confirmLabel: '保存',
+        cancelLabel: 'キャンセル',
+      }
+    );
     if (!name) return;
     
     const saved = storage.saveCustomTemplate(name, customizeSettings, selectedTemplate.id);
@@ -376,7 +415,7 @@ function App() {
     } else {
       toast.error('保存に失敗しました');
     }
-  }, [storage, customizeSettings, selectedTemplate.id, toast]);
+  }, [storage, customizeSettings, selectedTemplate.id, toast, promptDialog]);
 
   // カスタムテンプレートを読み込み
   const handleLoadCustomTemplate = useCallback((template: CustomTemplate) => {
@@ -410,6 +449,29 @@ function App() {
       {/* トースト通知 */}
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
 
+      {/* カスタムダイアログ */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        cancelLabel={confirmDialog.cancelLabel}
+        confirmVariant={confirmDialog.confirmVariant}
+        onConfirm={confirmDialog.handleConfirm}
+        onCancel={confirmDialog.cancel}
+      />
+      <PromptDialog
+        open={promptDialog.open}
+        title={promptDialog.title}
+        message={promptDialog.message}
+        defaultValue={promptDialog.defaultValue}
+        placeholder={promptDialog.placeholder}
+        confirmLabel={promptDialog.confirmLabel}
+        cancelLabel={promptDialog.cancelLabel}
+        onConfirm={promptDialog.handleConfirm}
+        onCancel={promptDialog.cancel}
+      />
+
       {/* ローディングオーバーレイ */}
       {isLoading && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
@@ -420,13 +482,14 @@ function App() {
       {/* ヘッダー */}
       <Header />
 
-      {/* アンドゥ/リドゥボタン */}
-      <div className="fixed bottom-4 left-4 z-40 flex gap-2">
+      {/* アンドゥ/リドゥボタン（モバイルでは非表示、または別の場所に配置） */}
+      <div className="fixed bottom-4 left-4 z-40 hidden sm:flex gap-2">
         <button
           onClick={handleUndo}
           disabled={undoStack.length === 0}
-          className="p-2 bg-surface border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg"
+          className="p-2 bg-surface border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg touch-manipulation"
           title="元に戻す (⌘Z)"
+          aria-label="元に戻す"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -435,8 +498,9 @@ function App() {
         <button
           onClick={handleRedo}
           disabled={redoStack.length === 0}
-          className="p-2 bg-surface border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg"
+          className="p-2 bg-surface border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg touch-manipulation"
           title="やり直す (⌘⇧Z)"
+          aria-label="やり直す"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
@@ -445,12 +509,12 @@ function App() {
       </div>
 
       {/* メインコンテンツ */}
-      <main className="max-w-7xl mx-auto px-4 pb-12 animate-slide-up">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 pb-12 sm:pb-16 animate-slide-up">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 lg:gap-12">
           {/* 左カラム：入力フォーム */}
           <div className="order-2 lg:order-1 space-y-6">
             {/* リザルト情報 */}
-            <div className="bg-surface/50 rounded-2xl p-6 border border-border">
+            <div className="bg-surface/50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-border">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
                   <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -497,11 +561,13 @@ function App() {
             </div>
 
             {/* カスタマイズ設定 */}
-            <div className="bg-surface/50 rounded-2xl border border-border overflow-hidden customize-panel">
+            <div className="bg-surface/50 rounded-xl sm:rounded-2xl border border-border overflow-hidden customize-panel">
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                className="w-full px-6 py-4 flex items-center justify-between text-text-primary hover:bg-surface-hover transition-colors"
+                className="w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between text-text-primary hover:bg-surface-hover active:bg-surface-hover transition-colors touch-manipulation"
+                aria-expanded={isSettingsOpen}
+                aria-controls="customize-settings-content"
               >
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -521,7 +587,7 @@ function App() {
               </button>
               
               {isSettingsOpen && (
-                <div className="px-6 pb-6 space-y-6">
+                <div id="customize-settings-content" className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4 sm:space-y-6">
                   <CustomizeSettingsPanel
                     settings={customizeSettings}
                     onSettingsChange={handleSettingsChange}
@@ -612,8 +678,8 @@ function App() {
                 />
               </div>
 
-              {/* キーボードショートカット */}
-              <div className="text-xs text-text-muted/60 space-y-1 bg-surface/30 rounded-lg p-3">
+              {/* キーボードショートカット（デスクトップのみ表示） */}
+              <div className="hidden sm:block text-xs text-text-muted/60 space-y-1 bg-surface/30 rounded-lg p-3">
                 <p className="font-medium text-text-muted mb-2">ショートカット</p>
                 <div className="grid grid-cols-2 gap-1">
                   <span>⌘+S: ダウンロード</span>

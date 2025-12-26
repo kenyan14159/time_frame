@@ -1,7 +1,10 @@
-import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
+import { useRef, useCallback, useEffect, useState, useMemo, useDeferredValue } from 'react';
 import type { FormData, Template, CustomizeSettings, FontConfig, ImagePosition, Sticker } from '../types';
 import { getOutputSize, getNumberFontFamily, getJapaneseFontFamily, DEFAULT_IMAGE_POSITION } from '../types';
 import { toRomaji } from '../utils/romaji';
+import { logger } from '../utils/logger';
+import { useFontLoader } from './useFontLoader';
+import { debounce } from '../utils/debounce';
 
 interface UseCanvasGeneratorProps {
   formData: FormData;
@@ -41,6 +44,35 @@ export function useCanvasGenerator({
   // フォントファミリーをメモ化
   const numberFontFamily = useMemo(() => getNumberFontFamily(customizeSettings.numberFontId), [customizeSettings.numberFontId]);
   const japaneseFontFamily = useMemo(() => getJapaneseFontFamily(customizeSettings.japaneseFontId), [customizeSettings.japaneseFontId]);
+
+  // フォントを動的に読み込む
+  const numberFontWeights = useMemo(() => {
+    const weights = new Set([template.fonts.record.weight]);
+    return Array.from(weights);
+  }, [template.fonts.record.weight]);
+  
+  const japaneseFontWeights = useMemo(() => {
+    const weights = new Set([
+      template.fonts.eventName.weight,
+      template.fonts.eventType.weight,
+      template.fonts.comment.weight,
+    ]);
+    return Array.from(weights);
+  }, [template.fonts.eventName.weight, template.fonts.eventType.weight, template.fonts.comment.weight]);
+
+  // フォント名を抽出（family文字列から）
+  const extractFontName = useCallback((family: string): string => {
+    // "Bebas Neue" や "Noto Sans JP" のような形式からフォント名を抽出
+    const match = family.match(/"([^"]+)"/);
+    if (match) return match[1];
+    // フォールバック: 最初のフォント名を取得
+    const firstFont = family.split(',')[0].trim().replace(/['"]/g, '');
+    // スペースを+に変換（Google FontsのURL形式）
+    return firstFont.replace(/\s+/g, '+');
+  }, []);
+
+  useFontLoader(extractFontName(numberFontFamily), numberFontWeights);
+  useFontLoader(extractFontName(japaneseFontFamily), japaneseFontWeights);
 
   // フォント読み込み完了を待つ（Canvas描画の崩れ防止）
   const ensureFontsReady = useCallback(async () => {
@@ -83,10 +115,27 @@ export function useCanvasGenerator({
         setLoadedImage(img);
       }
     };
-    img.onerror = () => {
+    img.onerror = (error) => {
       if (!cancelled) {
-        console.error('Failed to load image');
-        setLoadedImage(null);
+        logger.error('Failed to load background image', error);
+        // CORSエラーの場合、crossOriginを削除して再試行
+        if (img.crossOrigin) {
+          const retryImg = new Image();
+          retryImg.onload = () => {
+            if (!cancelled) {
+              setLoadedImage(retryImg);
+              logger.warn('Image loaded without CORS (may cause canvas taint)');
+            }
+          };
+          retryImg.onerror = () => {
+            if (!cancelled) {
+              setLoadedImage(null);
+            }
+          };
+          retryImg.src = backgroundImageUrl;
+        } else {
+          setLoadedImage(null);
+        }
       }
     };
     img.src = backgroundImageUrl;
@@ -121,7 +170,12 @@ export function useCanvasGenerator({
           }
           resolve();
         };
-        img.onerror = () => resolve();
+        img.onerror = (error) => {
+          if (!cancelled) {
+            logger.warn(`Failed to load sticker image: ${sticker.id}`, error);
+          }
+          resolve();
+        };
         img.src = sticker.content;
       });
     });
@@ -470,24 +524,66 @@ export function useCanvasGenerator({
     }
   }, [loadedImage, template, formData, width, height, drawText, customizeSettings, imagePosition, stickers, drawStickers, japaneseFontFamily, numberFontFamily]);
 
-  // 依存関係が変わるたびに再描画
+  // デバウンス付きの描画関数（100msのデバウンス）
+  const debouncedDrawCanvasRef = useRef<ReturnType<typeof debounce> | null>(null);
+  
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await ensureFontsReady();
-      if (cancelled) return;
-      drawCanvas();
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (!debouncedDrawCanvasRef.current) {
+      debouncedDrawCanvasRef.current = debounce(() => {
+        let cancelled = false;
+        (async () => {
+          await ensureFontsReady();
+          if (cancelled) return;
+          drawCanvas();
+        })();
+        return () => {
+          cancelled = true;
+        };
+      }, 100);
+    }
   }, [drawCanvas, ensureFontsReady]);
 
-  // PNG画像を生成
+  // 重要な状態変更は即座に描画、その他はデバウンス
+  const deferredFormData = useDeferredValue(formData);
+  const deferredCustomizeSettings = useDeferredValue(customizeSettings);
+  const shouldDrawImmediately = loadedImage !== null && formData === deferredFormData && customizeSettings === deferredCustomizeSettings;
+
+  // 依存関係が変わるたびに再描画（デバウンス適用）
+  useEffect(() => {
+    if (shouldDrawImmediately && debouncedDrawCanvasRef.current) {
+      // 即座に描画が必要な場合（画像読み込み完了など）
+      let cancelled = false;
+      (async () => {
+        await ensureFontsReady();
+        if (cancelled) return;
+        drawCanvas();
+      })();
+      return () => {
+        cancelled = true;
+      };
+    } else if (debouncedDrawCanvasRef.current) {
+      // デバウンス描画
+      debouncedDrawCanvasRef.current();
+    }
+  }, [
+    loadedImage,
+    template,
+    deferredFormData,
+    deferredCustomizeSettings,
+    imagePosition,
+    stickers,
+    japaneseFontFamily,
+    numberFontFamily,
+    shouldDrawImmediately,
+    drawCanvas,
+    ensureFontsReady,
+  ]);
+
+  // 画像を生成（WebP/AVIF対応）
   const generateImage = useCallback(async (): Promise<string | null> => {
     const canvas = canvasRef.current;
     if (!canvas) {
-      console.error('Canvas element not found');
+      logger.error('Canvas element not found');
       return null;
     }
 
@@ -496,13 +592,38 @@ export function useCanvasGenerator({
     try {
       await ensureFontsReady();
       drawCanvas();
-      const dataUrl = canvas.toDataURL('image/png', 1.0);
+      
+      // ブラウザのサポートを確認（WebP/AVIF）
+      let mimeType = 'image/png';
+      let quality = 1.0;
+      
+      // AVIFのサポート確認
+      try {
+        const testDataUrl = canvas.toDataURL('image/avif', 0.5);
+        if (testDataUrl && testDataUrl.indexOf('data:image/avif') === 0) {
+          mimeType = 'image/avif';
+          quality = 0.9;
+        }
+      } catch {
+        // AVIF非対応の場合はWebPを試す
+        try {
+          const testDataUrl = canvas.toDataURL('image/webp', 0.5);
+          if (testDataUrl && testDataUrl.indexOf('data:image/webp') === 0) {
+            mimeType = 'image/webp';
+            quality = 0.9;
+          }
+        } catch {
+          // WebP非対応の場合はPNGを使用（デフォルト）
+        }
+      }
+      
+      const dataUrl = canvas.toDataURL(mimeType, quality);
       if (!dataUrl || dataUrl === 'data:,') {
         throw new Error('Failed to generate image data URL');
       }
       return dataUrl;
     } catch (error) {
-      console.error('Failed to generate image:', error);
+      logger.error('Failed to generate image', error);
       return null;
     } finally {
       setIsGenerating(false);
@@ -526,14 +647,18 @@ export function useCanvasGenerator({
       const fileName = formData.eventName 
         ? sanitizeFileName(formData.eventName)
         : 'image';
-      link.download = `result_${fileName}_${Date.now()}.png`;
+      // ファイル拡張子をMIMEタイプから判定
+      const fileExtension = dataUrl.startsWith('data:image/avif') ? 'avif' 
+        : dataUrl.startsWith('data:image/webp') ? 'webp' 
+        : 'png';
+      link.download = `result_${fileName}_${Date.now()}.${fileExtension}`;
       link.href = dataUrl;
       link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (error) {
-      console.error('Failed to download image:', error);
+      logger.error('Failed to download image', error);
       throw error;
     }
   }, [generateImage, formData.eventName]);
@@ -557,10 +682,34 @@ export function useCanvasGenerator({
       await ensureFontsReady();
       drawCanvas();
       
+      // WebP/AVIF対応のBlob生成
+      let mimeType = 'image/png';
+      let quality = 1.0;
+      
+      // AVIFのサポート確認
+      try {
+        const testDataUrl = canvas.toDataURL('image/avif', 0.5);
+        if (testDataUrl && testDataUrl.indexOf('data:image/avif') === 0) {
+          mimeType = 'image/avif';
+          quality = 0.9;
+        }
+      } catch {
+        // AVIF非対応の場合はWebPを試す
+        try {
+          const testDataUrl = canvas.toDataURL('image/webp', 0.5);
+          if (testDataUrl && testDataUrl.indexOf('data:image/webp') === 0) {
+            mimeType = 'image/webp';
+            quality = 0.9;
+          }
+        } catch {
+          // WebP非対応の場合はPNGを使用（デフォルト）
+        }
+      }
+      
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((blob) => {
           resolve(blob);
-        }, 'image/png');
+        }, mimeType, quality);
       });
       
       if (!blob) {
@@ -570,7 +719,8 @@ export function useCanvasGenerator({
         return true;
       }
 
-      const file = new File([blob], 'result.png', { type: 'image/png' });
+      const fileExtension = mimeType === 'image/avif' ? 'avif' : mimeType === 'image/webp' ? 'webp' : 'png';
+      const file = new File([blob], `result.${fileExtension}`, { type: mimeType });
       
       // ファイルシェアがサポートされているか確認
       const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
@@ -591,7 +741,7 @@ export function useCanvasGenerator({
             return false;
           }
           // その他のエラーはダウンロードにフォールバック
-          console.warn('Share failed, falling back to download:', shareError);
+          logger.warn('Share failed, falling back to download', shareError);
           await downloadImage();
           return true;
         }
@@ -607,7 +757,7 @@ export function useCanvasGenerator({
       if (error instanceof Error && error.name === 'AbortError') {
         return false;
       }
-      console.error('Failed to share image:', error);
+      logger.error('Failed to share image', error);
       // エラー時もダウンロードにフォールバック
       try {
         await downloadImage();

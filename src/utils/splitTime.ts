@@ -27,3 +27,4 @@ export function parseSplitsFromText(text: string): SplitTime[] {
     time: time.trim(),
   }));
 }
+

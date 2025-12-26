@@ -79,3 +79,39 @@ body {
 input[type="file"] {
   display: none;
 }
+
+/* モバイル最適化 */
+@media (max-width: 640px) {
+  /* タップターゲットの最小サイズを確保（44x44px） */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* 入力フィールドのフォントサイズを調整（iOSのズーム防止） */
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="tel"],
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* スクロールのスムーズ化 */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* タッチデバイスでのホバー効果を無効化 */
+@media (hover: none) {
+  .hover\:bg-surface-hover:hover {
+    background-color: var(--color-surface);
+  }
+  .hover\:text-text-secondary:hover {
+    color: var(--color-text-primary);
+  }
+  .hover\:border-accent:hover {
+    border-color: var(--color-border);
+  }
+}

@@ -43,3 +43,4 @@ export function useToast(): UseToastReturn {
     warning: (message: string, duration?: number) => showToast(message, 'warning', duration),
   }), [toasts, showToast, removeToast]);
 }
+

@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { FormData, CustomizeSettings, Template } from '../types';
 import { defaultTemplate, getTemplateById } from '../templates';
+import { logger } from '../utils/logger';
 
 // LocalStorageのキー
 const STORAGE_KEYS = {
@@ -20,10 +21,10 @@ function safeSetItem(key: string, value: string): boolean {
     return true;
   } catch (error) {
     if (error instanceof Error && error.name === 'QuotaExceededError') {
-      console.warn('LocalStorage quota exceeded, clearing old data...');
+      logger.warn('LocalStorage quota exceeded, clearing old data...');
       return false;
     }
-    console.error('Failed to save to localStorage:', error);
+    logger.error('Failed to save to localStorage', error);
     return false;
   }
 }
@@ -61,24 +62,24 @@ export function useLocalStorage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
 
-  // 初期ロード（同期的に実行）
-  if (!isLoaded) {
+  // 初期ロード（useEffectで非同期に実行）
+  useEffect(() => {
     try {
       // 履歴を読み込み
       const savedHistory = localStorage.getItem(STORAGE_KEYS.HISTORY);
       if (savedHistory) {
         const parsed = JSON.parse(savedHistory) as HistoryItem[];
-        // 最新件数のみ保持 - 初期値として設定
-        setTimeout(() => setHistory(parsed.slice(0, MAX_HISTORY_ITEMS)), 0);
+        // 最新件数のみ保持
+        setHistory(parsed.slice(0, MAX_HISTORY_ITEMS));
       }
 
       // カスタムテンプレートを読み込み
       const savedCustomTemplates = localStorage.getItem(STORAGE_KEYS.CUSTOM_TEMPLATES);
       if (savedCustomTemplates) {
-        setTimeout(() => setCustomTemplates(JSON.parse(savedCustomTemplates)), 0);
+        setCustomTemplates(JSON.parse(savedCustomTemplates));
       }
     } catch (error) {
-      console.error('Failed to load from localStorage:', error);
+      logger.error('Failed to load from localStorage', error);
       // 破損データの場合はクリア
       try {
         localStorage.removeItem(STORAGE_KEYS.HISTORY);
@@ -86,9 +87,10 @@ export function useLocalStorage() {
       } catch {
         // 無視
       }
+    } finally {
+      setIsLoaded(true);
     }
-    setTimeout(() => setIsLoaded(true), 0);
-  }
+  }, []); // 初回のみ実行
 
   // ドラフトを保存
   const saveDraft = useCallback((
@@ -131,7 +133,7 @@ export function useLocalStorage() {
         }
       }
     } catch (error) {
-      console.error('Failed to load draft:', error);
+      logger.error('Failed to load draft', error);
     }
     return null;
   }, []);
@@ -141,7 +143,7 @@ export function useLocalStorage() {
     try {
       localStorage.removeItem(STORAGE_KEYS.DRAFT);
     } catch (error) {
-      console.error('Failed to clear draft:', error);
+      logger.error('Failed to clear draft', error);
     }
   }, []);
 
@@ -276,3 +278,4 @@ export function useLocalStorage() {
     removeCustomTemplate,
   };
 }
+

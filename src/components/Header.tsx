@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { logger } from '../utils/logger';
 
 export function Header() {
   const [copied, setCopied] = useState(false);
@@ -30,8 +31,8 @@ export function Header() {
         await navigator.clipboard.writeText(window.location.href);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      } catch {
-        console.error('Failed to copy URL');
+      } catch (err) {
+        logger.error('Failed to copy URL', err);
       }
     }
   }, []);
@@ -46,7 +47,7 @@ export function Header() {
       </div>
 
       {/* メインコピー */}
-      <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-text-primary mb-4 tracking-tight leading-tight">
+      <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-text-primary mb-3 sm:mb-4 tracking-tight leading-tight">
         その記録、<br className="sm:hidden" />もっとカッコよく残せる。
       </h1>
       
@@ -59,7 +60,7 @@ export function Header() {
       </p>
       
       {/* バッジ＆シェアボタン */}
-      <div className="mt-6 flex items-center justify-center gap-3">
+      <div className="mt-4 sm:mt-6 flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-surface rounded-full border border-border text-xs text-text-muted">
           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
           無料・登録不要
@@ -67,8 +68,9 @@ export function Header() {
         
         <button
           onClick={handleShareSite}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-hover rounded-full border border-border text-xs text-text-muted hover:text-text-secondary transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-hover active:bg-surface-hover rounded-full border border-border text-xs text-text-muted hover:text-text-secondary active:text-text-secondary transition-colors touch-manipulation"
           title="このサイトをシェア"
+          aria-label="このサイトをシェア"
         >
           {copied ? (
             <>

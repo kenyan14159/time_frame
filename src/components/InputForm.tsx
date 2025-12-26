@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, type ChangeEvent, type DragEvent } from 'react';
 import type { FormData } from '../types';
+import { optimizeImageIfNeeded } from '../utils/imageOptimizer';
 
 interface InputFormProps {
   formData: FormData;
@@ -19,6 +20,7 @@ interface InputFormProps {
 export function InputForm({ formData, onFormChange, backgroundPreview, errors, onErrorClear, onError }: InputFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const dragCounter = useRef(0);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -37,14 +39,14 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
     onFormChange({ [name]: value });
   };
 
-  const handleImageFile = (file: File, showError?: (message: string) => void): void => {
+  const handleImageFile = async (file: File, showError?: (message: string) => void): Promise<void> => {
     // 画像ファイルのみ許可
     if (!file.type.startsWith('image/')) {
       const message = '画像ファイルを選択してください';
       if (showError) {
         showError(message);
-      } else {
-        window.alert(message);
+      } else if (onError) {
+        onError(message);
       }
       return;
     }
@@ -54,8 +56,8 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
       const message = '画像サイズが大きすぎます（15MB以下にしてください）';
       if (showError) {
         showError(message);
-      } else {
-        window.alert(message);
+      } else if (onError) {
+        onError(message);
       }
       return;
     }
@@ -65,13 +67,31 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
       onErrorClear('backgroundImage');
     }
     
-    onFormChange({ backgroundImage: file });
+    // 画像を最適化
+    setIsOptimizing(true);
+    try {
+      const optimizedFile = await optimizeImageIfNeeded(file, 5);
+      onFormChange({ backgroundImage: optimizedFile });
+      // 最適化された場合は通知（オプション）
+      // if (optimizedFile.size < file.size && onError) {
+      //   onError('画像を最適化しました');
+      // }
+    } catch (error) {
+      const message = '画像の処理に失敗しました';
+      if (showError) {
+        showError(message);
+      } else if (onError) {
+        onError(message);
+      }
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      handleImageFile(file, onError);
+      await handleImageFile(file, onError);
     }
   };
 
@@ -105,7 +125,7 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
     }
   }, []);
 
-  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+  const handleDrop = useCallback(async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -115,7 +135,7 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      handleImageFile(files[0], onError);
+      await handleImageFile(files[0], onError);
     }
   }, [onError]);
 
@@ -266,6 +286,17 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
         
         {backgroundPreview ? (
           <div className="relative">
+            {isOptimizing && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 rounded-lg">
+                <div className="text-white text-sm flex items-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>最適化中...</span>
+                </div>
+              </div>
+            )}
             <div 
               onClick={handleImageClick}
               onDragEnter={handleDragEnter}
@@ -287,7 +318,8 @@ export function InputForm({ formData, onFormChange, backgroundPreview, errors, o
                            ? 'border-red-500'
                            : isDragOver 
                              ? 'border-accent border-dashed bg-accent/5' 
-                             : 'border-border hover:border-accent'}`}
+                             : 'border-border hover:border-accent'}
+                         ${isOptimizing ? 'opacity-50' : ''}`}
             >
               <img 
                 src={backgroundPreview} 

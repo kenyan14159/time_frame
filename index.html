@@ -7,6 +7,12 @@
     <meta name="description" content="TIME FRAME - 駅伝・長距離ランナー専用の画像メーカー。リザルト・練習記録をかっこよくSNSでシェアしよう。" />
     <meta name="theme-color" content="#0a0a0a" />
     
+    <!-- Security Headers -->
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=()" />
+    
     <!-- OGP -->
     <meta property="og:title" content="TIME FRAME - 画像ジェネレーター" />
     <meta property="og:description" content="TIME FRAME - 駅伝・長距離ランナー専用。リザルト・練習記録をかっこよくSNSでシェアしよう。" />
@@ -51,10 +57,15 @@
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json" />
     
-    <!-- Google Fonts: Multiple font families -->
+    <!-- Google Fonts: 初期表示に必要なフォントのみ（遅延読み込み） -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Inter:wght@400;500;600;700;900&family=Kosugi+Maru&family=Montserrat:wght@400;500;600;700;900&family=Noto+Sans+JP:wght@400;500;600;700;900&family=Oswald:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Roboto:wght@400;500;700;900&family=Raleway:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&family=Lato:wght@400;700;900&family=Open+Sans:wght@400;600;700;800&family=Rubik:wght@400;500;600;700;800;900&family=Nunito:wght@400;600;700;800;900&family=Source+Sans+Pro:wght@400;600;700;900&family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=M+PLUS+1p:wght@400;500;700;800;900&family=Sawarabi+Gothic&family=Noto+Serif+JP:wght@400;500;600;700;900&family=Shippori+Mincho:wght@400;500;600;700;800&family=Yusei+Magic&family=Kiwi+Maru:wght@400;500&display=swap" rel="stylesheet">
+    <!-- デフォルトフォントのみを事前読み込み（Bebas Neue + Noto Sans JP） -->
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue:wght@400&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue:wght@400&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    </noscript>
+    <!-- その他のフォントは動的に読み込まれる（useFontLoaderフック経由） -->
     
     <title>TIME FRAME - 画像ジェネレーター</title>
   </head>
